@@ -423,32 +423,30 @@ function aiMove() {
   statusEl.textContent = 'AI đang suy nghĩ...';
 
   setTimeout(() => {
+    if (gameOver) { thinking = false; return; }
+
     // 1. Win immediately
     for (const { r, c } of getCandidates()) {
       board[r][c] = AI;
-      if (checkWin(r, c, AI)) { board[r][c] = EMPTY; placeMove(r, c, AI); currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; thinking = false; draw(); return; }
+      if (checkWin(r, c, AI)) { board[r][c] = EMPTY; placeMove(r, c, AI); doneAI(); return; }
       board[r][c] = EMPTY;
     }
 
     // 2. Block opponent's win
     for (const { r, c } of getCandidates()) {
       board[r][c] = PLAYER;
-      if (checkWin(r, c, PLAYER)) { board[r][c] = EMPTY; placeMove(r, c, AI); currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; thinking = false; draw(); return; }
+      if (checkWin(r, c, PLAYER)) { board[r][c] = EMPTY; placeMove(r, c, AI); doneAI(); return; }
       board[r][c] = EMPTY;
     }
 
     // 3. Force win with double threat
     for (const { r, c } of getCandidates()) {
-      if (hasDoubleThreatMove(r, c, AI)) {
-        placeMove(r, c, AI); currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; thinking = false; draw(); return;
-      }
+      if (hasDoubleThreatMove(r, c, AI)) { placeMove(r, c, AI); doneAI(); return; }
     }
 
     // 4. Block opponent's double threat
     for (const { r, c } of getCandidates()) {
-      if (hasDoubleThreatMove(r, c, PLAYER)) {
-        placeMove(r, c, AI); currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; thinking = false; draw(); return;
-      }
+      if (hasDoubleThreatMove(r, c, PLAYER)) { placeMove(r, c, AI); doneAI(); return; }
     }
 
     // 5. Opening moves
@@ -457,16 +455,13 @@ function aiMove() {
       for (let c = 0; c < SIZE; c++)
         if (board[r][c] === EMPTY) emptyCount++;
 
-    if (emptyCount === SIZE * SIZE) {
-      placeMove(Math.floor(SIZE/2), Math.floor(SIZE/2), AI);
-      currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; thinking = false; draw(); return;
-    }
+    if (emptyCount === SIZE * SIZE) { placeMove(Math.floor(SIZE/2), Math.floor(SIZE/2), AI); doneAI(); return; }
     if (emptyCount === SIZE * SIZE - 1) {
       const mid = Math.floor(SIZE/2);
       for (let dr = -1; dr <= 1; dr++)
         for (let dc = -1; dc <= 1; dc++) {
           const nr = mid + dr, nc = mid + dc;
-          if (board[nr][nc] === EMPTY) { placeMove(nr, nc, AI); currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; thinking = false; draw(); return; }
+          if (board[nr][nc] === EMPTY) { placeMove(nr, nc, AI); doneAI(); return; }
         }
     }
 
@@ -476,12 +471,18 @@ function aiMove() {
 
     if (best) {
       placeMove(best.r, best.c, AI);
-      currentPlayer = PLAYER;
-      statusEl.textContent = 'Lượt của bạn (X)';
     }
-    thinking = false;
-    draw();
+    doneAI();
   }, 50);
+}
+
+function doneAI() {
+  if (!gameOver) {
+    currentPlayer = PLAYER;
+    statusEl.textContent = 'Lượt của bạn (X)';
+  }
+  thinking = false;
+  draw();
 }
 
 // ===== DRAW =====
