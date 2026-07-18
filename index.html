@@ -63,8 +63,8 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 
-const SIZE = 20;
-const CELL = 28;
+const SIZE = 30;
+const CELL = 22;
 const PADDING = 24;
 const BOARD = CELL * SIZE;
 const W = BOARD + PADDING * 2;
@@ -460,7 +460,7 @@ function aiMove() {
 
     let bestMove = top[0];
     let bestScore = -Infinity;
-    const maxDepth = emptyCount > 380 ? 4 : (emptyCount > 350 ? 5 : 6);
+    const maxDepth = emptyCount > 800 ? 3 : (emptyCount > 600 ? 4 : (emptyCount > 300 ? 5 : 6));
 
     for (const { r, c } of top) {
       board[r][c] = AI;
@@ -511,7 +511,7 @@ function draw() {
   }
 
   // star points at cell centers
-  const stars = [[3,3],[3,16],[16,3],[16,16],[9,9]];
+  const stars = [[4,4],[4,14],[4,24],[14,4],[14,14],[14,24],[24,4],[24,14],[24,24]];
   ctx.fillStyle = '#A0825A';
   for (const [r, c] of stars) {
     const x = PADDING + (c + 0.5) * CELL, y = PADDING + (r + 0.5) * CELL;
