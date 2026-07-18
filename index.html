@@ -56,7 +56,7 @@ canvas {
 <body>
 <div id="status">Đang suy nghĩ...</div>
 <canvas id="game"></canvas>
-<button id="restartBtn">Chơi lại</button>
+
 
 <script>
 const canvas = document.getElementById('game');
@@ -619,11 +619,6 @@ canvas.addEventListener('click', e => {
     currentPlayer = AI;
     aiMove();
   }
-});
-
-document.getElementById('restartBtn').addEventListener('click', () => {
-  initBoard();
-  draw();
 });
 
 // initial draw
