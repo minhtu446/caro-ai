@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Caro AI - 20x20</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: #1a1a2e;
+  font-family: 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+canvas {
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 0 40px rgba(0,0,0,0.5);
+}
+#status {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+  background: rgba(0,0,0,0.6);
+  padding: 8px 24px;
+  border-radius: 8px;
+  z-index: 10;
+  text-align: center;
+  min-width: 200px;
+}
+#restartBtn {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255,255,255,0.1);
+  border: 2px solid rgba(255,255,255,0.2);
+  border-radius: 8px;
+  padding: 10px 32px;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  z-index: 10;
+  transition: background 0.2s;
+}
+#restartBtn:hover { background: rgba(255,255,255,0.2); }
+</style>
+</head>
+<body>
+<div id="status">Đang suy nghĩ...</div>
+<canvas id="game"></canvas>
+<button id="restartBtn">Chơi lại</button>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+
+const SIZE = 20;
+const CELL = 28;
+const PADDING = 24;
+const BOARD = CELL * (SIZE - 1);
+const W = BOARD + PADDING * 2;
+const H = BOARD + PADDING * 2;
+canvas.width = W;
+canvas.height = H;
+
+let board = [];
+let currentPlayer = 1; // 1 = player (X), -1 = AI (O)
+let gameOver = false;
+let winner = null;
+let thinking = false;
+
+const EMPTY = 0, PLAYER = 1, AI = -1;
+
+function initBoard() {
+  board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
+  currentPlayer = PLAYER;
+  gameOver = false;
+  winner = null;
+  thinking = false;
+  statusEl.textContent = 'Lượt của bạn (X)';
+}
+
+initBoard();
+
+function checkWin(r, c, player) {
+  const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+  for (const [dr, dc] of dirs) {
+    let count = 1;
+    for (let d = -1; d <= 1; d += 2) {
+      let nr = r + dr * d, nc = c + dc * d;
+      while (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === player) {
+        count++;
+        nr += dr * d;
+        nc += dc * d;
+      }
+    }
+    if (count >= 5) return true;
+  }
+  return false;
+}
+
+function isFull() {
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++)
+      if (board[r][c] === EMPTY) return false;
+  return true;
+}
+
+function placeMove(r, c, player) {
+  board[r][c] = player;
+  if (checkWin(r, c, player)) {
+    gameOver = true;
+    winner = player;
+    statusEl.textContent = player === PLAYER ? 'Bạn thắng! 🎉' : 'AI thắng! 🤖';
+    return true;
+  }
+  if (isFull()) {
+    gameOver = true;
+    statusEl.textContent = 'Hòa!';
+    return true;
+  }
+  return false;
+}
+
+// ===== AI =====
+const DIRECTIONS = [[1,0],[0,1],[1,1],[1,-1]];
+
+function evaluateLine(r, c, dr, dc, player) {
+  let count = 0, openEnds = 0;
+  let nr, nc;
+
+  for (let d = 1; d <= 4; d++) {
+    nr = r + dr * d; nc = c + dc * d;
+    if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) break;
+    if (board[nr][nc] === player) count++;
+    else break;
+  }
+  nr = r + dr * (count + 1); nc = c + dc * (count + 1);
+  if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === EMPTY) openEnds++;
+
+  for (let d = 1; d <= 4; d++) {
+    nr = r - dr * d; nc = c - dc * d;
+    if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) break;
+    if (board[nr][nc] === player) count++;
+    else break;
+  }
+  nr = r - dr * (count + 1); nc = c - dc * (count + 1);
+  if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === EMPTY) openEnds++;
+
+  return { count, openEnds };
+}
+
+const SCORES = {
+  5: 10000000,
+  4: { 2: 100000, 1: 10000 },
+  3: { 2: 5000, 1: 500 },
+  2: { 2: 200, 1: 50 },
+  1: { 2: 10, 1: 3 },
+};
+
+function scoreCell(r, c, player) {
+  let score = 0;
+  for (const [dr, dc] of DIRECTIONS) {
+    const { count, openEnds } = evaluateLine(r, c, dr, dc, player);
+    if (count >= 5) return SCORES[5];
+    if (count >= 1) {
+      const s = SCORES[count];
+      if (s && s[openEnds]) score += s[openEnds];
+    }
+  }
+  return score;
+}
+
+function evaluateBoard() {
+  let score = 0;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (board[r][c] === AI) score += scoreCell(r, c, AI);
+      else if (board[r][c] === PLAYER) score -= scoreCell(r, c, PLAYER);
+    }
+  }
+  return score;
+}
+
+function getCandidates() {
+  const candidates = [];
+  const visited = new Set();
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (board[r][c] !== EMPTY) continue;
+      let near = false;
+      for (let dr = -2; dr <= 2 && !near; dr++) {
+        for (let dc = -2; dc <= 2 && !near; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nr = r + dr, nc = c + dc;
+          if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] !== EMPTY) {
+            near = true;
+          }
+        }
+      }
+      if (near) {
+        const key = r * SIZE + c;
+        if (!visited.has(key)) {
+          visited.add(key);
+          candidates.push({ r, c });
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
+// Check immediate win/block
+function findImmediate(player) {
+  const opp = player === AI ? PLAYER : AI;
+  for (const { r, c } of getCandidates()) {
+    board[r][c] = player;
+    if (checkWin(r, c, player)) { board[r][c] = EMPTY; return { r, c }; }
+    board[r][c] = EMPTY;
+  }
+  for (const { r, c } of getCandidates()) {
+    board[r][c] = opp;
+    if (checkWin(r, c, opp)) { board[r][c] = EMPTY; return { r, c }; }
+    board[r][c] = EMPTY;
+  }
+  return null;
+}
+
+function minimax(depth, alpha, beta, isMax) {
+  const player = isMax ? AI : PLAYER;
+
+  const imm = findImmediate(player);
+  if (imm) {
+    board[imm.r][imm.c] = player;
+    const win = checkWin(imm.r, imm.c, player);
+    board[imm.r][imm.c] = EMPTY;
+    if (win) return isMax ? 10000000 - depth * 100 : -10000000 + depth * 100;
+  }
+
+  if (depth === 0) {
+    const ev = evaluateBoard();
+    const score = isMax ? ev : -ev;
+    return score;
+  }
+
+  const candidates = getCandidates();
+  if (candidates.length === 0) return 0;
+
+  // Score and sort candidates
+  const scored = candidates.map(({ r, c }) => {
+    board[r][c] = player;
+    const s = evaluateBoard();
+    board[r][c] = EMPTY;
+    return { r, c, s };
+  });
+  scored.sort((a, b) => b.s - a.s);
+  const top = scored.slice(0, Math.min(12, scored.length));
+
+  if (isMax) {
+    let maxEval = -Infinity;
+    for (const { r, c } of top) {
+      board[r][c] = AI;
+      const ev = minimax(depth - 1, alpha, beta, false);
+      board[r][c] = EMPTY;
+      maxEval = Math.max(maxEval, ev);
+      alpha = Math.max(alpha, ev);
+      if (beta <= alpha) break;
+    }
+    return maxEval;
+  } else {
+    let minEval = Infinity;
+    for (const { r, c } of top) {
+      board[r][c] = PLAYER;
+      const ev = minimax(depth - 1, alpha, beta, true);
+      board[r][c] = EMPTY;
+      minEval = Math.min(minEval, ev);
+      beta = Math.min(beta, ev);
+      if (beta <= alpha) break;
+    }
+    return minEval;
+  }
+}
+
+function aiMove() {
+  if (gameOver || thinking) return;
+  thinking = true;
+  statusEl.textContent = 'AI đang suy nghĩ...';
+
+  setTimeout(() => {
+    // check immediate win/block first
+    const imm = findImmediate(AI);
+    if (imm) {
+      const end = placeMove(imm.r, imm.c, AI);
+      if (!end) { currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; }
+      thinking = false;
+      draw();
+      return;
+    }
+
+    // opening: take center
+    let emptyCount = 0;
+    for (let r = 0; r < SIZE; r++)
+      for (let c = 0; c < SIZE; c++)
+        if (board[r][c] === EMPTY) emptyCount++;
+    if (emptyCount === SIZE * SIZE) {
+      const mid = Math.floor(SIZE / 2);
+      placeMove(mid, mid, AI);
+      currentPlayer = PLAYER;
+      statusEl.textContent = 'Lượt của bạn (X)';
+      thinking = false;
+      draw();
+      return;
+    }
+    // second move: adjacent to center
+    if (emptyCount === SIZE * SIZE - 1) {
+      const mid = Math.floor(SIZE / 2);
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const nr = mid + dr, nc = mid + dc;
+          if (board[nr][nc] === EMPTY) {
+            placeMove(nr, nc, AI);
+            currentPlayer = PLAYER;
+            statusEl.textContent = 'Lượt của bạn (X)';
+            thinking = false;
+            draw();
+            return;
+          }
+        }
+      }
+    }
+
+    const candidates = getCandidates();
+    const scored = candidates.map(({ r, c }) => {
+      board[r][c] = AI;
+      const s = evaluateBoard();
+      board[r][c] = EMPTY;
+      return { r, c, s };
+    });
+    scored.sort((a, b) => b.s - a.s);
+    const top = scored.slice(0, Math.min(8, scored.length));
+
+    let bestMove = top[0];
+    let bestScore = -Infinity;
+    const depth = 3;
+
+    for (const { r, c } of top) {
+      board[r][c] = AI;
+      const score = minimax(depth - 1, -Infinity, Infinity, false);
+      board[r][c] = EMPTY;
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = { r, c };
+      }
+    }
+
+    if (bestMove) {
+      const end = placeMove(bestMove.r, bestMove.c, AI);
+      if (!end) { currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; }
+    }
+    thinking = false;
+    draw();
+  }, 50);
+}
+
+// ===== DRAW =====
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // bg
+  ctx.fillStyle = '#DEB887';
+  ctx.fillRect(0, 0, W, H);
+
+  // grid
+  ctx.strokeStyle = '#8B7355';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < SIZE; i++) {
+    const x = PADDING + i * CELL;
+    const y = PADDING + i * CELL;
+    ctx.beginPath();
+    ctx.moveTo(PADDING, y);
+    ctx.lineTo(PADDING + BOARD, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, PADDING);
+    ctx.lineTo(x, PADDING + BOARD);
+    ctx.stroke();
+  }
+
+  // star points
+  const stars = [[3,3],[3,16],[16,3],[16,16],[9,9],[9,3],[9,16],[3,9],[16,9]];
+  ctx.fillStyle = '#8B7355';
+  for (const [r, c] of stars) {
+    const x = PADDING + c * CELL, y = PADDING + r * CELL;
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // pieces
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (board[r][c] === EMPTY) continue;
+      const x = PADDING + c * CELL, y = PADDING + r * CELL;
+      if (board[r][c] === PLAYER) {
+        ctx.fillStyle = '#e53935';
+        ctx.shadowColor = 'rgba(0,0,0,0.2)';
+        ctx.shadowBlur = 4;
+        ctx.beginPath();
+        ctx.arc(x, y, CELL / 2 - 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 18px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('X', x, y);
+      } else {
+        ctx.fillStyle = '#333';
+        ctx.shadowColor = 'rgba(0,0,0,0.2)';
+        ctx.shadowBlur = 4;
+        ctx.beginPath();
+        ctx.arc(x, y, CELL / 2 - 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 18px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('O', x, y);
+      }
+    }
+  }
+
+  // last move indicator
+  let lastR = -1, lastC = -1;
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++)
+      if (board[r][c] !== EMPTY) { lastR = r; lastC = c; }
+  if (lastR >= 0) {
+    const x = PADDING + lastC * CELL, y = PADDING + lastR * CELL;
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+// ===== INPUT =====
+canvas.addEventListener('click', e => {
+  if (gameOver || thinking || currentPlayer !== PLAYER) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (W / rect.width);
+  const my = (e.clientY - rect.top) * (H / rect.height);
+  const c = Math.round((mx - PADDING) / CELL);
+  const r = Math.round((my - PADDING) / CELL);
+  if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return;
+  if (board[r][c] !== EMPTY) return;
+
+  const end = placeMove(r, c, PLAYER);
+  draw();
+  if (!end) {
+    currentPlayer = AI;
+    aiMove();
+  }
+});
+
+document.getElementById('restartBtn').addEventListener('click', () => {
+  initBoard();
+  draw();
+});
+
+// initial draw
+draw();
+</script>
+</body>
+</html>
