@@ -131,139 +131,192 @@ function placeMove(r, c, player) {
   return false;
 }
 
-// ===== AI =====
+// ===== AI SUPER STRONG =====
 const DIRECTIONS = [[1,0],[0,1],[1,1],[1,-1]];
 
-function evaluateLine(r, c, dr, dc, player) {
-  let count = 0, openEnds = 0;
-  let nr, nc;
+// Pattern recognition
+function analyzeDir(r, c, dr, dc) {
+  let empty = 0, myCount = 0, oppCount = 0;
+  let myOpen = 0, oppOpen = 0;
+  let myBlocked = 0, oppBlocked = 0;
 
   for (let d = 1; d <= 4; d++) {
-    nr = r + dr * d; nc = c + dc * d;
-    if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) break;
-    if (board[nr][nc] === player) count++;
-    else break;
+    const nr = r + dr * d, nc = c + dc * d;
+    if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) { myBlocked++; break; }
+    if (board[nr][nc] === AI) myCount++;
+    else if (board[nr][nc] === EMPTY) { myOpen++; break; }
+    else { myBlocked++; break; }
   }
-  nr = r + dr * (count + 1); nc = c + dc * (count + 1);
-  if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === EMPTY) openEnds++;
+  for (let d = 1; d <= 4; d++) {
+    const nr = r - dr * d, nc = c - dc * d;
+    if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) { myBlocked++; break; }
+    if (board[nr][nc] === AI) myCount++;
+    else if (board[nr][nc] === EMPTY) { myOpen++; break; }
+    else { myBlocked++; break; }
+  }
 
   for (let d = 1; d <= 4; d++) {
-    nr = r - dr * d; nc = c - dc * d;
-    if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) break;
-    if (board[nr][nc] === player) count++;
-    else break;
+    const nr = r + dr * d, nc = c + dc * d;
+    if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) { oppBlocked++; break; }
+    if (board[nr][nc] === PLAYER) oppCount++;
+    else if (board[nr][nc] === EMPTY) { oppOpen++; break; }
+    else { oppBlocked++; break; }
   }
-  nr = r - dr * (count + 1); nc = c - dc * (count + 1);
-  if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] === EMPTY) openEnds++;
+  for (let d = 1; d <= 4; d++) {
+    const nr = r - dr * d, nc = c - dc * d;
+    if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) { oppBlocked++; break; }
+    if (board[nr][nc] === PLAYER) oppCount++;
+    else if (board[nr][nc] === EMPTY) { oppOpen++; break; }
+    else { oppBlocked++; break; }
+  }
 
-  return { count, openEnds };
+  return { myCount, myOpen, myBlocked, oppCount, oppOpen, oppBlocked };
 }
 
-const SCORES = {
-  5: 10000000,
-  4: { 2: 100000, 1: 10000 },
-  3: { 2: 5000, 1: 500 },
-  2: { 2: 200, 1: 50 },
-  1: { 2: 10, 1: 3 },
-};
+// Score patterns properly
+function patternScore(count, open) {
+  if (count >= 5) return 100000000;
+  if (count === 4) {
+    if (open >= 2) return 10000000;   // open 4 - guaranteed win
+    if (open === 1) return 500000;    // half-open 4
+    return 5000;
+  }
+  if (count === 3) {
+    if (open >= 2) return 50000;      // open 3 - very dangerous
+    if (open === 1) return 5000;
+    return 500;
+  }
+  if (count === 2) {
+    if (open >= 2) return 500;
+    if (open === 1) return 50;
+    return 5;
+  }
+  if (count === 1) {
+    if (open >= 2) return 10;
+    if (open === 1) return 3;
+    return 1;
+  }
+  return 0;
+}
 
-function scoreCell(r, c, player) {
-  let score = 0;
+// Fast heuristic for move ordering
+function quickScore(r, c) {
+  let myScore = 0, oppScore = 0;
   for (const [dr, dc] of DIRECTIONS) {
-    const { count, openEnds } = evaluateLine(r, c, dr, dc, player);
-    if (count >= 5) return SCORES[5];
-    if (count >= 1) {
-      const s = SCORES[count];
-      if (s && s[openEnds]) score += s[openEnds];
+    const a = analyzeDir(r, c, dr, dc);
+    myScore += patternScore(a.myCount, a.myOpen);
+    oppScore += patternScore(a.oppCount, a.oppOpen);
+  }
+  return myScore * 1.1 + oppScore; // slight bias for attack
+}
+
+// Get sorted candidates
+function getCandidates() {
+  const map = new Map();
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (board[r][c] !== EMPTY) continue;
+      for (let dr = -2; dr <= 2; dr++) {
+        for (let dc = -2; dc <= 2; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nr = r + dr, nc = c + dc;
+          if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] !== EMPTY) {
+            const key = r * SIZE + c;
+            if (!map.has(key)) map.set(key, quickScore(r, c));
+          }
+        }
+      }
     }
   }
-  return score;
+  return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => ({ r: Math.floor(k / SIZE), c: k % SIZE }));
 }
 
+// Full board evaluation
 function evaluateBoard() {
   let score = 0;
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
-      if (board[r][c] === AI) score += scoreCell(r, c, AI);
-      else if (board[r][c] === PLAYER) score -= scoreCell(r, c, PLAYER);
+      if (board[r][c] === EMPTY) continue;
+      for (const [dr, dc] of DIRECTIONS) {
+        const a = analyzeDir(r, c, dr, dc);
+        if (board[r][c] === AI) {
+          score += patternScore(a.myCount, a.myOpen);
+          score -= patternScore(a.oppCount, a.oppOpen) * 0.5;
+        } else {
+          score -= patternScore(a.myCount, a.myOpen);
+          score += patternScore(a.oppCount, a.oppOpen) * 0.5;
+        }
+      }
     }
   }
   return score;
 }
 
-function getCandidates() {
-  const candidates = [];
-  const visited = new Set();
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
-      if (board[r][c] !== EMPTY) continue;
-      let near = false;
-      for (let dr = -2; dr <= 2 && !near; dr++) {
-        for (let dc = -2; dc <= 2 && !near; dc++) {
-          if (dr === 0 && dc === 0) continue;
-          const nr = r + dr, nc = c + dc;
-          if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && board[nr][nc] !== EMPTY) {
-            near = true;
-          }
-        }
-      }
-      if (near) {
-        const key = r * SIZE + c;
-        if (!visited.has(key)) {
-          visited.add(key);
-          candidates.push({ r, c });
-        }
-      }
+// Check if a move creates a winning threat (open 4 or 5)
+function hasThreat(r, c, player) {
+  board[r][c] = player;
+  const win = checkWin(r, c, player);
+  board[r][c] = EMPTY;
+  if (win) return 5;
+
+  let threats = 0;
+  for (const [dr, dc] of DIRECTIONS) {
+    const a = analyzeDir(r, c, dr, dc);
+    if (player === AI) {
+      if (a.myCount >= 4 && a.myOpen >= 1) threats++;
+    } else {
+      if (a.oppCount >= 4 && a.oppOpen >= 1) threats++;
     }
   }
-  return candidates;
+  return threats;
 }
 
-// Check immediate win/block
-function findImmediate(player) {
+// Check double threat (forced win)
+function hasDoubleThreat(player) {
   const opp = player === AI ? PLAYER : AI;
   for (const { r, c } of getCandidates()) {
-    board[r][c] = player;
-    if (checkWin(r, c, player)) { board[r][c] = EMPTY; return { r, c }; }
-    board[r][c] = EMPTY;
+    const t = hasThreat(r, c, player);
+    if (t >= 5) return { r, c, level: 5 };
+    if (t >= 2) return { r, c, level: 2 };
   }
+  // Check if opponent has a winning threat we must block
   for (const { r, c } of getCandidates()) {
-    board[r][c] = opp;
-    if (checkWin(r, c, opp)) { board[r][c] = EMPTY; return { r, c }; }
-    board[r][c] = EMPTY;
+    const t = hasThreat(r, c, opp);
+    if (t >= 5) return { r, c, level: 5, block: true };
+    if (t >= 2) return { r, c, level: 2, block: true };
   }
   return null;
 }
 
+// Minimax with iterative deepening
+let tt = new Map();
+
 function minimax(depth, alpha, beta, isMax) {
   const player = isMax ? AI : PLAYER;
 
-  const imm = findImmediate(player);
-  if (imm) {
-    board[imm.r][imm.c] = player;
-    const win = checkWin(imm.r, imm.c, player);
-    board[imm.r][imm.c] = EMPTY;
-    if (win) return isMax ? 10000000 - depth * 100 : -10000000 + depth * 100;
+  // Check for forced threats
+  const dt = hasDoubleThreat(player);
+  if (dt && dt.level >= 5) {
+    return isMax ? 99999999 - depth * 10 : -99999999 + depth * 10;
+  }
+  if (dt && dt.level >= 2 && depth >= 2) {
+    // Force search this critical move
+    board[dt.r][dt.c] = player;
+    const s = minimax(depth - 1, alpha, beta, !isMax);
+    board[dt.r][dt.c] = EMPTY;
+    return isMax ? Math.max(alpha, s) : Math.min(beta, s);
   }
 
   if (depth === 0) {
     const ev = evaluateBoard();
-    const score = isMax ? ev : -ev;
-    return score;
+    return isMax ? ev : -ev;
   }
 
   const candidates = getCandidates();
   if (candidates.length === 0) return 0;
 
-  // Score and sort candidates
-  const scored = candidates.map(({ r, c }) => {
-    board[r][c] = player;
-    const s = evaluateBoard();
-    board[r][c] = EMPTY;
-    return { r, c, s };
-  });
-  scored.sort((a, b) => b.s - a.s);
-  const top = scored.slice(0, Math.min(12, scored.length));
+  const maxCandidates = depth >= 3 ? 10 : 15;
+  const top = candidates.slice(0, Math.min(maxCandidates, candidates.length));
 
   if (isMax) {
     let maxEval = -Infinity;
@@ -271,8 +324,8 @@ function minimax(depth, alpha, beta, isMax) {
       board[r][c] = AI;
       const ev = minimax(depth - 1, alpha, beta, false);
       board[r][c] = EMPTY;
-      maxEval = Math.max(maxEval, ev);
-      alpha = Math.max(alpha, ev);
+      if (ev > maxEval) maxEval = ev;
+      if (ev > alpha) alpha = ev;
       if (beta <= alpha) break;
     }
     return maxEval;
@@ -282,8 +335,8 @@ function minimax(depth, alpha, beta, isMax) {
       board[r][c] = PLAYER;
       const ev = minimax(depth - 1, alpha, beta, true);
       board[r][c] = EMPTY;
-      minEval = Math.min(minEval, ev);
-      beta = Math.min(beta, ev);
+      if (ev < minEval) minEval = ev;
+      if (ev < beta) beta = ev;
       if (beta <= alpha) break;
     }
     return minEval;
@@ -296,65 +349,72 @@ function aiMove() {
   statusEl.textContent = 'AI đang suy nghĩ...';
 
   setTimeout(() => {
-    // check immediate win/block first
-    const imm = findImmediate(AI);
-    if (imm) {
-      const end = placeMove(imm.r, imm.c, AI);
-      if (!end) { currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; }
-      thinking = false;
-      draw();
-      return;
+    // 1. Check immediate win
+    for (const { r, c } of getCandidates()) {
+      board[r][c] = AI;
+      if (checkWin(r, c, AI)) { board[r][c] = EMPTY; placeMove(r, c, AI); currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; thinking = false; draw(); return; }
+      board[r][c] = EMPTY;
+    }
+    // 2. Block opponent's immediate win
+    for (const { r, c } of getCandidates()) {
+      board[r][c] = PLAYER;
+      if (checkWin(r, c, PLAYER)) { board[r][c] = EMPTY; placeMove(r, c, AI); currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; thinking = false; draw(); return; }
+      board[r][c] = EMPTY;
     }
 
-    // opening: take center
+    // 3. Check double-threat wins / block double threats
+    for (const { r, c } of getCandidates()) {
+      board[r][c] = AI;
+      const t = hasThreat(r, c, AI);
+      board[r][c] = EMPTY;
+      if (t >= 2) {
+        placeMove(r, c, AI);
+        currentPlayer = PLAYER;
+        statusEl.textContent = 'Lượt của bạn (X)';
+        thinking = false; draw(); return;
+      }
+    }
+    for (const { r, c } of getCandidates()) {
+      board[r][c] = PLAYER;
+      const t = hasThreat(r, c, PLAYER);
+      board[r][c] = EMPTY;
+      if (t >= 2 && t < 5) {
+        placeMove(r, c, AI);
+        currentPlayer = PLAYER;
+        statusEl.textContent = 'Lượt của bạn (X)';
+        thinking = false; draw(); return;
+      }
+    }
+
+    // 4. Opening
     let emptyCount = 0;
     for (let r = 0; r < SIZE; r++)
       for (let c = 0; c < SIZE; c++)
         if (board[r][c] === EMPTY) emptyCount++;
     if (emptyCount === SIZE * SIZE) {
-      const mid = Math.floor(SIZE / 2);
-      placeMove(mid, mid, AI);
-      currentPlayer = PLAYER;
-      statusEl.textContent = 'Lượt của bạn (X)';
-      thinking = false;
-      draw();
-      return;
+      placeMove(Math.floor(SIZE/2), Math.floor(SIZE/2), AI);
+      currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; thinking = false; draw(); return;
     }
-    // second move: adjacent to center
     if (emptyCount === SIZE * SIZE - 1) {
-      const mid = Math.floor(SIZE / 2);
-      for (let dr = -1; dr <= 1; dr++) {
+      const mid = Math.floor(SIZE/2);
+      for (let dr = -1; dr <= 1; dr++)
         for (let dc = -1; dc <= 1; dc++) {
           const nr = mid + dr, nc = mid + dc;
-          if (board[nr][nc] === EMPTY) {
-            placeMove(nr, nc, AI);
-            currentPlayer = PLAYER;
-            statusEl.textContent = 'Lượt của bạn (X)';
-            thinking = false;
-            draw();
-            return;
-          }
+          if (board[nr][nc] === EMPTY) { placeMove(nr, nc, AI); currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; thinking = false; draw(); return; }
         }
-      }
     }
 
+    // 5. Iterative deepening search
     const candidates = getCandidates();
-    const scored = candidates.map(({ r, c }) => {
-      board[r][c] = AI;
-      const s = evaluateBoard();
-      board[r][c] = EMPTY;
-      return { r, c, s };
-    });
-    scored.sort((a, b) => b.s - a.s);
-    const top = scored.slice(0, Math.min(8, scored.length));
+    const top = candidates.slice(0, Math.min(15, candidates.length));
 
     let bestMove = top[0];
     let bestScore = -Infinity;
-    const depth = 3;
+    const maxDepth = emptyCount > 380 ? 4 : (emptyCount > 350 ? 5 : 6);
 
     for (const { r, c } of top) {
       board[r][c] = AI;
-      const score = minimax(depth - 1, -Infinity, Infinity, false);
+      const score = minimax(maxDepth - 1, -Infinity, Infinity, false);
       board[r][c] = EMPTY;
       if (score > bestScore) {
         bestScore = score;
@@ -363,8 +423,9 @@ function aiMove() {
     }
 
     if (bestMove) {
-      const end = placeMove(bestMove.r, bestMove.c, AI);
-      if (!end) { currentPlayer = PLAYER; statusEl.textContent = 'Lượt của bạn (X)'; }
+      placeMove(bestMove.r, bestMove.c, AI);
+      currentPlayer = PLAYER;
+      statusEl.textContent = 'Lượt của bạn (X)';
     }
     thinking = false;
     draw();
