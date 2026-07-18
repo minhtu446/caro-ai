@@ -66,7 +66,7 @@ const statusEl = document.getElementById('status');
 const SIZE = 20;
 const CELL = 28;
 const PADDING = 24;
-const BOARD = CELL * (SIZE - 1);
+const BOARD = CELL * SIZE;
 const W = BOARD + PADDING * 2;
 const H = BOARD + PADDING * 2;
 canvas.width = W;
@@ -382,40 +382,39 @@ function draw() {
   // border
   ctx.strokeStyle = '#C4A97D';
   ctx.lineWidth = 3;
-  ctx.strokeRect(PADDING - 6, PADDING - 6, BOARD + 12, BOARD + 12);
+  ctx.strokeRect(PADDING - 4, PADDING - 4, BOARD + 8, BOARD + 8);
 
-  // grid
+  // grid - (SIZE+1) lines for SIZE cells
   ctx.strokeStyle = '#A0825A';
   ctx.lineWidth = 1;
-  for (let i = 0; i < SIZE; i++) {
-    const x = PADDING + i * CELL;
-    const y = PADDING + i * CELL;
+  for (let i = 0; i <= SIZE; i++) {
+    const pos = PADDING + i * CELL;
     ctx.beginPath();
-    ctx.moveTo(PADDING, y);
-    ctx.lineTo(PADDING + BOARD, y);
+    ctx.moveTo(PADDING, pos);
+    ctx.lineTo(PADDING + BOARD, pos);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(x, PADDING);
-    ctx.lineTo(x, PADDING + BOARD);
+    ctx.moveTo(pos, PADDING);
+    ctx.lineTo(pos, PADDING + BOARD);
     ctx.stroke();
   }
 
-  // star points
-  const stars = [[3,3],[3,16],[16,3],[16,16],[9,9],[9,3],[9,16],[3,9],[16,9]];
-  ctx.fillStyle = '#8B7355';
+  // star points at cell centers
+  const stars = [[3,3],[3,16],[16,3],[16,16],[9,9]];
+  ctx.fillStyle = '#A0825A';
   for (const [r, c] of stars) {
-    const x = PADDING + c * CELL, y = PADDING + r * CELL;
+    const x = PADDING + (c + 0.5) * CELL, y = PADDING + (r + 0.5) * CELL;
     ctx.beginPath();
     ctx.arc(x, y, 4, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // pieces
+  // pieces - centered in each cell
   const half = CELL / 2 - 4;
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
       if (board[r][c] === EMPTY) continue;
-      const x = PADDING + c * CELL, y = PADDING + r * CELL;
+      const x = PADDING + (c + 0.5) * CELL, y = PADDING + (r + 0.5) * CELL;
       if (board[r][c] === PLAYER) {
         // X - draw two crossing lines
         ctx.strokeStyle = '#e53935';
@@ -451,11 +450,11 @@ function draw() {
     for (let c = 0; c < SIZE; c++)
       if (board[r][c] !== EMPTY) { lastR = r; lastC = c; }
   if (lastR >= 0) {
-    const x = PADDING + lastC * CELL, y = PADDING + lastR * CELL;
+    const x = PADDING + (lastC + 0.5) * CELL, y = PADDING + (lastR + 0.5) * CELL;
     ctx.strokeStyle = '#FFD700';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
     ctx.stroke();
   }
 }
@@ -466,8 +465,8 @@ canvas.addEventListener('click', e => {
   const rect = canvas.getBoundingClientRect();
   const mx = (e.clientX - rect.left) * (W / rect.width);
   const my = (e.clientY - rect.top) * (H / rect.height);
-  const c = Math.round((mx - PADDING) / CELL);
-  const r = Math.round((my - PADDING) / CELL);
+  const c = Math.floor((mx - PADDING) / CELL);
+  const r = Math.floor((my - PADDING) / CELL);
   if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return;
   if (board[r][c] !== EMPTY) return;
 
